@@ -27,6 +27,28 @@ static inline int nextPow2(int n) {
     return n;
 }
 
+// downsweep exclusive scan kernel function
+void downsweep_kernel(int two_dplus1, int two_d, int*& result) {
+  int global_i = (blockIdx.x * blockDim.x + threadIdx.x) * two_dplus1;
+  int t = result[global_i + two_d - 1]
+  result[global_i + two_d - 1] = result[global_i + two_dplus1 - 1];
+  result[global_i + two_dplus1 - 1] += t;
+
+
+
+
+
+}
+
+// upsweep exclusive scan kernel function
+// TODO: numBlocks = blockDim.x?
+void upsweep_kernel(int two_dplus1, int two_d, int*& result) {
+  int global_i = (blockIdx.x * blockDim.x  + threadIdx.x) * two_dplus1;
+  result[global_i + two_dplus1 - 1] += result[global_i + two_d - 1];
+
+}
+
+
 // exclusive_scan --
 //
 // Implementation of an exclusive scan on global memory array `input`,
@@ -42,8 +64,32 @@ static inline int nextPow2(int n) {
 // Also, as per the comments in cudaScan(), you can implement an
 // "in-place" scan, since the timing harness makes a copy of input and
 // places it in result
+// TODO: assums that result starts with input already copied over
 void exclusive_scan(int* input, int N, int* result)
 {
+  // upsweep
+  for (int two_d = 1; two_d <= N/2; two_d*=2) {
+    int two_dplus1 = 2*two_d;
+    int total_threads_per_it = N / two_dplus1;
+    int num_blocks = total_threads_per_it / THREADS_PER_BLOCK;
+    upsweep_kernel<<<num_blocks, threadsPerBlock>>>(two_dplus1, two_d, result);
+
+  result[N - 1] = 0;
+
+  // downsweep
+  for (int two_d = N / 2; two_d >= 1; two_d /= 2) {
+    int two_dplus1 = t * two_d;
+    int total_threads_per_it = N / two_dplus1;
+    int num_blocks = total_threads_per_it / THREADS_PER_BLOCK;
+    downsweep_kernel<<<num_blocks, threadsPerBlock>>>(two_dplus1, two_d, result);
+
+
+
+
+  }
+
+  }
+
 
     // CS149 TODO:
     //
