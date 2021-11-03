@@ -37,8 +37,18 @@ void downsweep_kernel(int two_dplus1, int two_d, int*& result) {
 
 
 
-
 }
+
+/*
+Input: [1, 2, 2, 1, 1, 1, 3, 5, 3, 3]
+Bitmask: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] // cuda malloc 0's and update from there
+Given index i in bitmask, =1 if input[i] = input[i+1]
+Wanted output: [0, 1, 0, 1, 1, 0, 0, 0, 1, 0]
+Ex_scan: 
+
+   */
+
+
 
 // upsweep exclusive scan kernel function
 // TODO: numBlocks = blockDim.x?

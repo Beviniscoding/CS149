@@ -379,6 +379,86 @@ shadePixel(int circleIndex, float2 pixelCenter, float3 p, float4* imagePtr) {
     // END SHOULD-BE-ATOMIC REGION
 }
 
+
+
+// kernelRenderPixels
+__global__ void kernelRenderPixels(std::vector<float> circleList, std::vector<float> blockRadius>, int numListCircles, int block_dim_x, block_dim_y, block_idx_x, block_idx_y) {
+  for (int circleIndex = 0; circleIndex < numListCircles; circleIndex++) {
+    int index3 = 3 * circleIndex;
+    float px = position[index3];
+    float py = position[index3+1];
+    float pz = position[index3+2]; // TODO: do we even need this?
+    float rad = radius[circleIndex];
+
+    // TODO: How to find pixel location? and pixel size?
+    // TODO: Question: if I kernel in a kernel, can I use blockdim?
+    // TODO: Question: Why doesn't the current implementation work for shading order? Isn't it still going through the circles in order?
+    float pixelX = block_idx_x * block_dim_x + threadIdx.x;
+    float pixelY = block_idx_y * block_dim_y + threadIdx.y;
+    float pixelCenterNormX = pixelWidth * (static_cast<float>(pixelX) + 0.5f);
+    float pixelCenterNormY = pixelHeight * (static_cast<float>(pixelY) + 0.5f);
+
+    // TODO: what is invWidth and invHeight?
+    // TODO: in a graph pic, which way is x and which is y?
+    // TODO: imgPtr? how to shade at that particular place?
+    // TODO: clamps??
+    float half_pixel_width = pixelWidth * 0.5f;
+    float half_pixel_height = pixelHeight * 0.5f;
+    if (circleInBox(px, py, rad, pixelCenterNormX - half_pixel_width, pixelCenterNormX + half_pixel_width, pixelCenterNormY - half_pixel_height, pixelCenterNormY + half_pixel_height)) {
+      float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixelY * imageWidth + screenMinX)]);
+      shadePixel(circleIndex, pixelCenterNormX, pixelCenterNormY, px, py, pz, imgPtr);
+    }
+     // TODO: maybe do some checks to make sure that we are within image bounds?
+
+
+
+  }
+
+
+
+}
+
+
+__global__ void kernelRenderBlocks(float* positions) { // add radius to args?
+
+   int numCirclesInBlock = 0;
+   std::vector<float> blockCircleList;
+   std::vector<float> blockRadiusList;
+   for (int circleIndex=0; circleIndex<numCircles; circleIndex++) { // TODO: whut? how does this indexing into positions even work wtf
+
+        int index3 = 3 * circleIndex;
+
+        float px = position[index3];
+        float py = position[index3+1];
+        float pz = position[index3+2];
+        float rad = radius[circleIndex];
+
+         //TODO: can I do this? Does it need to be a vector?
+
+        // TODO: -1? or nah?
+        if (circleInBoxConservative(px, py, rad, blockIdx.x * blockDim.x, blockIdx.x * blockDim.x + blockDim.x - 1, blockIdx.y * blockDim.y, blockIdx.y * blockDim.y + blockDim.y - 1)) {
+          blockCircleList.push_back(px);
+          blockCircleList.push_back(py);
+          blockCircleList.push_back(pz);
+          blockRadiusList.push_back(rad);
+          numCirclesInBlock++;
+        }
+
+
+
+      }
+
+   // Call per pixel kernel function
+
+   // TODO: figure out dimensions of thread!! 
+   dim3 threadsPerBlock(blockDim.x, blockDim.y);
+   kernelRenderPixels<<<blockDim.x * blockDim.y, threadsPerBlock>>>(blockCircleList, blockRadiusList, numCirclesInBlock, blockDim.x, blockDim.y, blockIdx.x, blockIdx.y);
+
+  
+
+
+}
+
 // kernelRenderCircles -- (CUDA device code)
 //
 // Each thread renders a circle.  Since there is no protection to
