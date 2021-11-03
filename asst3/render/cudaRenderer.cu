@@ -385,7 +385,7 @@ shadePixel(int circleIndex, float2 pixelCenter, float3 p, float4* imagePtr) {
 __global__ void kernelRenderPixels(std::vector<float> circleList, std::vector<float> blockRadius>, int numListCircles, int block_dim_x, block_dim_y, block_idx_x, block_idx_y) {
   for (int circleIndex = 0; circleIndex < numListCircles; circleIndex++) {
     int index3 = 3 * circleIndex;
-    float px = position[index3];
+    float px = position[index3]; //TODO: store index of circle and access array when shading
     float py = position[index3+1];
     float pz = position[index3+2]; // TODO: do we even need this?
     float rad = radius[circleIndex];
@@ -420,7 +420,7 @@ __global__ void kernelRenderPixels(std::vector<float> circleList, std::vector<fl
 
 
 __global__ void kernelRenderBlocks(float* positions) { // add radius to args?
-
+   __shared__ std::vector<float> blockCircleListIdx;
    int numCirclesInBlock = 0;
    std::vector<float> blockCircleList;
    std::vector<float> blockRadiusList;
@@ -455,6 +455,61 @@ __global__ void kernelRenderBlocks(float* positions) { // add radius to args?
    kernelRenderPixels<<<blockDim.x * blockDim.y, threadsPerBlock>>>(blockCircleList, blockRadiusList, numCirclesInBlock, blockDim.x, blockDim.y, blockIdx.x, blockIdx.y);
 
   
+
+
+   // Pixel do per pixel work
+
+
+// need numListCircles
+// __global__ void kernelRenderPixels(std::vector<float> circleList, std::vector<float> blockRadius>, int numListCircles, int block_dim_x, block_dim_y, block_idx_x, block_idx_y) {
+
+    // Pixel info
+
+    float pixelX = blockIdx.x * blockDim.x + threadIdx.x;
+    float pixelY = blockIdx.y * blockDim.y + threadIdx.y;
+    float invWidth = 1.f / imageWidth;
+    float invHeight = 1.f / imageHeight;
+
+
+    float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixelX) + 0.5f),invHeight * (static_cast<float>(pixelY) + 0.5f));
+
+
+    float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixelY * imageWidth + screenMinX)]);
+
+
+  for (int circleIndex = 0; circleIndex < numListCircles; circleIndex++) {
+    int index3 = 3 * circleIndex;
+    float px = position[index3]; //TODO: store index of circle and access array when shading
+    float py = position[index3+1];
+    float pz = position[index3+2]; // TODO: do we even need this?
+    float rad = radius[circleIndex];
+
+    shadePixel(circleIndex, pixelCenterNorm, p, imgPtr);
+    
+
+
+
+    // TODO: what is invWidth and invHeight?
+    // TODO: in a graph pic, which way is x and which is y?
+    // TODO: imgPtr? how to shade at that particular place?
+    // TODO: clamps??
+    float half_pixel_width = pixelWidth * 0.5f;
+    float half_pixel_height = pixelHeight * 0.5f;
+    if (circleInBox(px, py, rad, pixelCenterNormX - half_pixel_width, pixelCenterNormX + half_pixel_width, pixelCenterNormY - half_pixel_height, pixelCenterNormY + half_pixel_height)) {
+      float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixelY * imageWidth + screenMinX)]);
+      shadePixel(circleIndex, pixelCenterNormX, pixelCenterNormY, px, py, pz, imgPtr);
+    }
+     // TODO: maybe do some checks to make sure that we are within image bounds?
+
+
+
+  }
+
+
+
+
+
+
 
 
 }
@@ -719,6 +774,9 @@ CudaRenderer::render() {
     // 256 threads per block is a healthy number
     dim3 blockDim(256, 1);
     dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);
+
+    dim3 blockDim(16, 16);
+  
 
     kernelRenderCircles<<<gridDim, blockDim>>>();
     cudaDeviceSynchronize();
