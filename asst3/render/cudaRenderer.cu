@@ -418,9 +418,116 @@ __global__ void kernelRenderPixels(std::vector<float> circleList, std::vector<fl
 
 }
 
+__global__ void kernelRenderBlocksActual(float* positions) {
+  // 1. Find smaller circle list from larger circle list
+
+  // Set up
+  __shared__ float* ex_scan_output = new float[256]; 
+  __shared__ float* ex_scan_scratch = new float[2*256]
+  __shared__ float* flag_list = new float[256];
+  int num_circles = cuConstRendererParams.numCircles;
+  
+  // Run 256 threads and process 256 circles at a time
+  for (int i = 0; i < num_circles; i += 256) {
+
+    // Index for a circle within positions
+    int linearThreadIndex =  threadIdx.y * blockDim.x + threadIdx.x + i; // within 0 - 256
+
+    // TODO: check bounds to see if within num_circles
+    int adjustedLinearThreadIndex = linearThreadIndex + i; // add multiplier * 256 for next 256 batch
+    int circle_idx = 3 * adjustedLinearThreadIndex;
+
+    // 1.a Find flag list (whether or not circle is within block diminsions)
+    // Populate it by having each thread populate one index (check one circle within positions)
+    // TODO: Need -1?
+    if (circleInBoxConservative(position[circle_idx], position[circle_idx + 1], radius[linearThreadIndex], 
+          blockIdx.x * blockDim.x, blockIdx.x * blockDim.x + blockDim.x - 1, blockIdx.y * blockDim.y, 
+          blockIdx.y * blockDim.y + blockDim.y - 1)) {
+      flag_list[linearThreadIndex] = 1;
+
+    } else {
+      // TODO: Is this already initialized to 0? If so, delete this else statement
+      flag_list[linearThreadIndex] = 0;
+    }
+
+    // All threads finish filling flag list before moving on
+    __syncthreads(); 
+
+    // 1.b Exclusive scan on flag list to find index of desired
+    // TODO: check inputs of exclusive scan are correct (they seem kinda funny....)
+    sharedMemExclusiveScan(linearThreadIndex, flag_list, ex_scan_output, ex_scan_scratch, 256);
+
+    __syncthreads();
+
+    // Find num circles affecting block
+    int num_circles_block = if (flags[255] == 0) ? ex_scan_output[255] : ex_scan_output[255] + 1;
+
+    // 1.c. Create desired output (block_circle_index) using flags and ex scan 
+    __shared__ int* block_circle_index = new int[num_circles_block];
+    if (flags[linearThreadIndex] == 1) {
+      idx_into_circle_list = ex_scan_output[linearThreadIndex];
+      block_circle_index[idx_into_circle_list] = adjustedLinearThreadIndex;
+      // circle indexes not 3x adjusted
+      
+    }
+
+    __syncthreads();
+
+    // 2. Shade pixels with new circles defined in block_circle_index 
+    // TODO: Can do all this set up outside for loop?
+    
+    // 2.a Set up pixel and image info
+    int px = blockIdx.x * blockDim.x + threadIdx.x;
+    int py = blockIdx.y * blockDim.y + threadIdx.y;
+    
+    // TODO: Can do this outside of for loop
+    short imageWidth = cuConstRendererParams.imageWidth;
+    short imageHeight = cuConstRendererParams.imageHeight;
+
+    // Find px and py in imageWidth coordinates? TODO: Why do we do this?
+    short minX = static_cast<short>(imageWidth * px);
+    short minY = static_cast<short>(imageHeight * py);
+
+    // Set up clamps, check if 0 < x < imageWidth
+    short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth) : 0;
+    short screenMinY = (minY > 0) ? ((minY < imageHeight) ? minY : imageHeight) : 0;
+
+    // TODO: Can do this outside of for loop
+    float invWidth = 1.f / imageWidth;
+    float invHeight = 1.f / imageHeight;
+
+    float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (screenMinY * imageWidth + screenMinX)]);
+    float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(screenMinX) + 0.5f),
+                                                 invHeight * (static_cast<float>(screenMinY) + 0.5f));
+   
+    // 2.b For loop through all block circles and shade pixel
+    for (int i = 0; i < num_circles_block; i++) {
+      // Grab circle info
+      int index = block_circle_index[i];
+      int index3 = 3 * index;
+      float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
+      shadePixel(index, pixelCenterNorm, p, imgPtr);
+    }
+
+  }
+
+/*
+circleInBoxConservative(
+    float circleX, float circleY, float circleRadius,
+    float boxL, float boxR, float boxT, float boxB)
+{
+*/
+
 
 __global__ void kernelRenderBlocks(float* positions) { // add radius to args?
+
+   // Fill blockCircleListIndex
    __shared__ std::vector<float> blockCircleListIdx;
+
+
+
+
+
    int numCirclesInBlock = 0;
    std::vector<float> blockCircleList;
    std::vector<float> blockRadiusList;
@@ -448,7 +555,7 @@ __global__ void kernelRenderBlocks(float* positions) { // add radius to args?
 
       }
 
-   // Call per pixel kernel function
+   // Per pixel work
 
    // TODO: figure out dimensions of thread!! 
    dim3 threadsPerBlock(blockDim.x, blockDim.y);
@@ -456,32 +563,28 @@ __global__ void kernelRenderBlocks(float* positions) { // add radius to args?
 
   
 
-
+   // TODO: figure out if pixel is out of bounds
    // Pixel do per pixel work
-
-
-// need numListCircles
-// __global__ void kernelRenderPixels(std::vector<float> circleList, std::vector<float> blockRadius>, int numListCircles, int block_dim_x, block_dim_y, block_idx_x, block_idx_y) {
 
     // Pixel info
 
     float pixelX = blockIdx.x * blockDim.x + threadIdx.x;
     float pixelY = blockIdx.y * blockDim.y + threadIdx.y;
-    float invWidth = 1.f / imageWidth;
-    float invHeight = 1.f / imageHeight;
+    float invWidth = 1.f / cuConstRendererParams.imageWidth;
+    float invHeight = 1.f / cuConstRendererParams.imageHeight;;
 
 
-    float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixelX) + 0.5f),invHeight * (static_cast<float>(pixelY) + 0.5f));
+    float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixelX) + 0.5f), invHeight * (static_cast<float>(pixelY) + 0.5f));
 
 
-    float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixelY * imageWidth + screenMinX)]);
+    // TODO: screenMinX? And clamps??
+    float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (pixelY * imageWidth)]);
 
 
   for (int circleIndex = 0; circleIndex < numListCircles; circleIndex++) {
     int index3 = 3 * circleIndex;
     float px = position[index3]; //TODO: store index of circle and access array when shading
     float py = position[index3+1];
-    float pz = position[index3+2]; // TODO: do we even need this?
     float rad = radius[circleIndex];
 
     shadePixel(circleIndex, pixelCenterNorm, p, imgPtr);
@@ -772,12 +875,10 @@ void
 CudaRenderer::render() {
 
     // 256 threads per block is a healthy number
-    dim3 blockDim(256, 1);
-    dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);
-
+    // dim3 blockDim(256, 1);
     dim3 blockDim(16, 16);
-  
+    dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);  
 
-    kernelRenderCircles<<<gridDim, blockDim>>>();
+    kernelRenderBlocksActual<<<gridDim, blockDim>>>();
     cudaDeviceSynchronize();
 }
