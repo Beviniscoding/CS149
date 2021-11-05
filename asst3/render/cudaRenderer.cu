@@ -427,7 +427,7 @@ __global__ void kernelRenderBlocksActual() {
     // All threads finish filling flag list before moving on
     __syncthreads(); 
 
-    printf("Hello from block %d, thread %d updated flag list to %d  \n", blockIdx.x, threadIdx.x, flag_list[linearThreadIndex]);
+    //printf("Hello from block %d, thread %d updated flag list to %d  \n", blockIdx.x, threadIdx.x, flag_list[linearThreadIndex]);
 
     // 1.b Exclusive scan on flag list to find index of desired
     // TODO: check inputs of exclusive scan are correct (they seem kinda funny....)
@@ -481,7 +481,7 @@ __global__ void kernelRenderBlocksActual() {
     for (int i = 0; i < num_circles_block; i++) {
       // Grab circle info
       int index = block_circle_index[i];
-      int index3 = 3 * index;
+      int index3 = index;
       float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
       shadePixel(index, pixelCenterNorm, p, imgPtr);
     }
