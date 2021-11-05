@@ -14,6 +14,9 @@
 #include "sceneLoader.h"
 #include "util.h"
 
+#include "circleBoxTest.cu_inl"
+#define SCAN_BLOCK_DIM   256
+#include "exclusiveScan.cu_inl"
 ////////////////////////////////////////////////////////////////////////////////////////
 // Putting all the cuda kernels here
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -382,13 +385,13 @@ shadePixel(int circleIndex, float2 pixelCenter, float3 p, float4* imagePtr) {
 
 
 
-__global__ void kernelRenderBlocksActual(float* positions) {
+__global__ void kernelRenderBlocksActual() {
   // 1. Find smaller circle list from larger circle list
 
   // Set up
-  __shared__ float* ex_scan_output = new float[256]; 
-  __shared__ float* ex_scan_scratch = new float[2*256]
-  __shared__ float* flag_list = new float[256];
+  __shared__ uint ex_scan_output[256]; 
+  __shared__ uint ex_scan_scratch[2*256];
+  __shared__ uint flag_list[256];
   int num_circles = cuConstRendererParams.numCircles;
   
   // Run 256 threads and process 256 circles at a time
@@ -404,9 +407,11 @@ __global__ void kernelRenderBlocksActual(float* positions) {
     // 1.a Find flag list (whether or not circle is within block diminsions)
     // Populate it by having each thread populate one index (check one circle within positions)
     // TODO: Need -1?
-    if (circleInBoxConservative(position[circle_idx], position[circle_idx + 1], radius[linearThreadIndex], 
-          blockIdx.x * blockDim.x, blockIdx.x * blockDim.x + blockDim.x - 1, blockIdx.y * blockDim.y, 
-          blockIdx.y * blockDim.y + blockDim.y - 1)) {
+    if (circleInBoxConservative(cuConstRendererParams.position[circle_idx], cuConstRendererParams.position[circle_idx + 1], cuConstRendererParams.radius[linearThreadIndex], 
+          (blockIdx.x * blockDim.x) / cuConstRendererParams.imageWidth, 
+          (blockIdx.x * blockDim.x + blockDim.x - 1) / cuConstRendererParams.imageWidth, 
+          (blockIdx.y * blockDim.y) / cuConstRendererParams.imageHeight, 
+          (blockIdx.y * blockDim.y + blockDim.y - 1) / cuConstRendererParams.imageHeight)) {
       flag_list[linearThreadIndex] = 1;
 
     } else {
@@ -424,12 +429,13 @@ __global__ void kernelRenderBlocksActual(float* positions) {
     __syncthreads();
 
     // Find num circles affecting block
-    int num_circles_block = if (flags[255] == 0) ? ex_scan_output[255] : ex_scan_output[255] + 1;
-
+    int num_circles_block = (flag_list[255] == 0) ? ex_scan_output[255] : ex_scan_output[255] + 1;
     // 1.c. Create desired output (block_circle_index) using flags and ex scan 
-    __shared__ int* block_circle_index = new int[num_circles_block];
-    if (flags[linearThreadIndex] == 1) {
-      idx_into_circle_list = ex_scan_output[linearThreadIndex];
+    //__shared__ int* block_circle_index = new int[num_circles_block];
+    __shared__ uint block_circle_index[256];
+
+    if (flag_list[linearThreadIndex] == 1) {
+      int idx_into_circle_list = ex_scan_output[linearThreadIndex];
       block_circle_index[idx_into_circle_list] = adjustedLinearThreadIndex;
       // circle indexes not 3x adjusted
       
