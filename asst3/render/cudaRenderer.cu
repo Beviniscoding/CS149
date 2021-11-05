@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <vector>
+#include <stdio.h>
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -407,13 +408,15 @@ __global__ void kernelRenderBlocksActual() {
     // 1.a Find flag list (whether or not circle is within block diminsions)
     // Populate it by having each thread populate one index (check one circle within positions)
     // TODO: Need -1?
-    if (circleInBoxConservative(cuConstRendererParams.position[circle_idx], cuConstRendererParams.position[circle_idx + 1], cuConstRendererParams.radius[linearThreadIndex], 
-          (blockIdx.x * blockDim.x) / cuConstRendererParams.imageWidth, 
-          (blockIdx.x * blockDim.x + blockDim.x - 1) / cuConstRendererParams.imageWidth, 
-          (blockIdx.y * blockDim.y) / cuConstRendererParams.imageHeight, 
-          (blockIdx.y * blockDim.y + blockDim.y - 1) / cuConstRendererParams.imageHeight)) {
+    int index3 = 3 * linearThreadIndex;
+    float3 circle = *(float3*)(&cuConstRendererParams.position[index3]);
+    float  rad = cuConstRendererParams.radius[linearThreadIndex];
+    if (circleInBoxConservative(circle.x, circle.y, rad, 
+          (blockIdx.x * blockDim.x) , 
+          (blockIdx.x * blockDim.x + blockDim.x - 1) , 
+          (blockIdx.y * blockDim.y) , 
+          (blockIdx.y * blockDim.y + blockDim.y - 1) )) {
       flag_list[linearThreadIndex] = 1;
-
     } else {
       // TODO: Is this already initialized to 0? If so, delete this else statement
       flag_list[linearThreadIndex] = 0;
@@ -421,6 +424,8 @@ __global__ void kernelRenderBlocksActual() {
 
     // All threads finish filling flag list before moving on
     __syncthreads(); 
+
+    printf("Hello from block %d, thread %d updated flag list to %d  \n", blockIdx.x, threadIdx.x, flag_list[linearThreadIndex]);
 
     // 1.b Exclusive scan on flag list to find index of desired
     // TODO: check inputs of exclusive scan are correct (they seem kinda funny....)
@@ -746,7 +751,12 @@ CudaRenderer::render() {
     // 256 threads per block is a healthy number
     // dim3 blockDim(256, 1);
     dim3 blockDim(16, 16);
-    dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);  
+    //dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);  
+
+    //dim3 gridDim(1024 / blockDim.x , 1024 / blockDim.y);
+    dim3 gridDim(
+        (image->width + blockDim.x - 1) / blockDim.x,
+        (image->height + blockDim.y - 1) / blockDim.y);
 
     kernelRenderBlocksActual<<<gridDim, blockDim>>>();
     cudaDeviceSynchronize();
