@@ -410,10 +410,12 @@ __global__ void kernelRenderBlocksActual() {
   short minX = static_cast<short>(px);
   short minY = static_cast<short>(py);
 
+ 
 
 
 
   float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * (py * imageWidth + px)]); //switched the X and Y
+  float4 imgPtrTemp = *imgPtr;
   float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(px) + 0.5f),
                                                  invHeight * (static_cast<float>(py) + 0.5f));
     
@@ -511,7 +513,9 @@ __global__ void kernelRenderBlocksActual() {
     // 2.a Set up pixel and image info
     
 
-    
+    if (px < 0 || px > imageWidth || py < 0 || py > imageWidth) {
+       continue;
+    }
     // Find px and py in imageWidth coordinates? TODO: Why do we do this?
     //if (px < 0 || px > imageWidth) {
       //  printf("hi");
@@ -525,39 +529,18 @@ __global__ void kernelRenderBlocksActual() {
     // // Set up clamps, check if 0 < x < imageWidth
     // short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth) : 0;
     // short screenMinY = (minY > 0) ? ((minY < imageHeight) ? minY : imageHeight) : 0;
-    //     // TODO: if pixel falls out of bounds, return or do nothing
 
-
-
-    // if ((blockIdx.x == 32) && blockIdx.y == 32) {  
-    //     printf("imageWidth: %hu, imageHeight: %hu, blockIdx.x: %d, blockIdx.y: %d, threadIdx.x: %d, threadIdx.y: %d, pixelx: %hu, and pixely: %hu\n", imageWidth, imageHeight, blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, minX, minY);
-    // }
     // 2.b For loop through all block circles and shade pixel
-    // if ((blockIdx.x == 32) && blockIdx.y == 32) {
-    //     printf("num_circles in block: %d", num_circles_block);
-    // }
     for (int i = 0; i < num_circles_block; i++) {
-        
-        // if ((blockIdx.x == 0) && blockIdx.y == 0 && threadIdx.y == 0) {  
-        //     printf("i = %d", i);
-        // }
-        // printf("i = %d", i);
-
         // Grab circle info
-        int circle_block_index = block_circle_index[i]; //??
-        
+        int circle_block_index = block_circle_index[i];
         int block_index3 = circle_block_index*3;
-        // if ((blockIdx.x == 0) && blockIdx.y == 0 && threadIdx.y == 0) {  
-        //      printf("block_index = %d, num_circles_block = %d, numcircles = %d\n", circle_block_index, num_circles_block, num_circles);
-        // }
-        
-        // printf("index = %d", index);
         float3 p = *(float3*)(&cuConstRendererParams.position[block_index3]);
-        //printf("boutta shade up some shit\n");
-        shadePixel(circle_block_index, pixelCenterNorm, p, imgPtr);
-        }
+        shadePixel(circle_block_index, pixelCenterNorm, p, &imgPtrTemp);
+    }
 
   }
+  *imgPtr = imgPtrTemp;
 }
 
 
