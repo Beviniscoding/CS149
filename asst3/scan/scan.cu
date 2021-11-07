@@ -28,15 +28,14 @@ static inline int nextPow2(int n) {
 }
 
 // downsweep exclusive scan kernel function
-void downsweep_kernel(int two_dplus1, int two_d, int*& result) {
-  int global_i = (blockIdx.x * blockDim.x + threadIdx.x) * two_dplus1;
-  int t = result[global_i + two_d - 1]
-  result[global_i + two_d - 1] = result[global_i + two_dplus1 - 1];
-  result[global_i + two_dplus1 - 1] += t;
-
-
-
-
+__global__ void downsweep_kernel(int two_dplus1, int two_d, int* result, int bound) {
+  int global_i = (blockIdx.x * blockDim.x + threadIdx.x);
+  //int t = result[global_i + two_d - 1];
+  if (global_i < bound){
+    int t = result[global_i * two_dplus1 + two_d - 1];
+    result[global_i * two_dplus1 + two_d - 1] = result[global_i * two_dplus1 + two_dplus1 - 1];
+    result[global_i * two_dplus1 + two_dplus1 - 1] += t;
+  }
 }
 
 /*
@@ -48,14 +47,30 @@ Ex_scan:
 
    */
 
-
+__global__ void mid_kernel(int last, int*result){
+  result[last] = 0;
+}
 
 // upsweep exclusive scan kernel function
 // TODO: numBlocks = blockDim.x?
-void upsweep_kernel(int two_dplus1, int two_d, int*& result) {
-  int global_i = (blockIdx.x * blockDim.x  + threadIdx.x) * two_dplus1;
-  result[global_i + two_dplus1 - 1] += result[global_i + two_d - 1];
+__global__ void upsweep_kernel(int two_dplus1, int two_d, int* result, int bound) {
+  int global_i = (blockIdx.x * blockDim.x  + threadIdx.x) ;
+  if (global_i < bound){
+    result[global_i*two_dplus1 + two_dplus1 - 1] += result[global_i*two_dplus1 + two_d - 1];
+  }
+}
 
+__global__ void find_flags(int* input, int bound, int* result) {
+  int index = threadIdx.x + (blockIdx.x * blockDim.x);
+  if (index < bound) {
+    if (input[index] == input[index + 1]) {
+      result[index] = 1;
+    } else {
+      result[index] = 0;
+    }
+  //} else {
+    //result[index] = 0;
+  }
 }
 
 
@@ -78,40 +93,28 @@ void upsweep_kernel(int two_dplus1, int two_d, int*& result) {
 void exclusive_scan(int* input, int N, int* result)
 {
   // upsweep
+  N = nextPow2(N);
   for (int two_d = 1; two_d <= N/2; two_d*=2) {
     int two_dplus1 = 2*two_d;
     int total_threads_per_it = N / two_dplus1;
-    int num_blocks = total_threads_per_it / THREADS_PER_BLOCK;
-    upsweep_kernel<<<num_blocks, threadsPerBlock>>>(two_dplus1, two_d, result);
+    int num_blocks = int(total_threads_per_it / THREADS_PER_BLOCK)+1;
+    upsweep_kernel<<<num_blocks, THREADS_PER_BLOCK>>>(two_dplus1, two_d, result, total_threads_per_it);
+  }
 
-  result[N - 1] = 0;
+  //result[N - 1] = 0; Can I do this or do I need a kernel?
+  mid_kernel<<< 1,1 >>>(N-1,result);
 
   // downsweep
   for (int two_d = N / 2; two_d >= 1; two_d /= 2) {
-    int two_dplus1 = t * two_d;
+    int two_dplus1 = 2 * two_d;
     int total_threads_per_it = N / two_dplus1;
-    int num_blocks = total_threads_per_it / THREADS_PER_BLOCK;
-    downsweep_kernel<<<num_blocks, threadsPerBlock>>>(two_dplus1, two_d, result);
-
-
-
+    int num_blocks = int(total_threads_per_it / THREADS_PER_BLOCK) + 1;
+    downsweep_kernel<<<num_blocks, THREADS_PER_BLOCK>>>(two_dplus1, two_d, result, total_threads_per_it);
 
   }
 
   }
 
-
-    // CS149 TODO:
-    //
-    // Implement your exclusive scan implementation here.  Keep input
-    // mind that although the arguments to this function are device
-    // allocated arrays, this is a function that is running in a thread
-    // on the CPU.  Your implementation will need to make multiple calls
-    // to CUDA kernel functions (that you must write) to implement the
-    // scan.
-
-
-}
 
 
 //
@@ -196,14 +199,37 @@ double cudaScanThrust(int* inarray, int* end, int* resultarray) {
     return overallDuration; 
 }
 
-
+__global__ void find_output(int* input, int bound, int* output) {
+  int index = threadIdx.x + (blockDim.x * blockIdx.x);
+  if (index < bound){
+    if (input[index] == 1 && index == 0) {
+      output[0] = 0;
+    }else if (input[index] != input[index+1]) {
+      output[input[index]] = index;
+    }
+  }
+}
 // find_repeats --
 //
 // Given an array of integers `device_input`, returns an array of all
 // indices `i` for which `device_input[i] == device_input[i+1]`.
 //
 // Returns the total number of pairs found
+// TODO: What to do with device_output?
 int find_repeats(int* device_input, int length, int* device_output) {
+    // int* flags = new int[length];
+    // int* flags_scanned = new int[length];
+    int block_amt = int(length/ THREADS_PER_BLOCK) + 1;
+    find_flags<<<block_amt,THREADS_PER_BLOCK>>>(device_input, length-1, device_output);
+    exclusive_scan(device_input,length,device_output);
+    int output_size;
+    cudaMemcpy(&output_size, &device_output[length-1],sizeof(int), cudaMemcpyDeviceToHost);
+    int* device_tmp = nullptr;
+    cudaMalloc(&device_tmp,length * sizeof(int));
+    cudaMemcpy(device_tmp,device_output,length*sizeof(int), cudaMemcpyDeviceToDevice);
+    find_output<<<block_amt,THREADS_PER_BLOCK>>>(device_tmp, length-1, device_output);
+    cudaFree(device_tmp);
+    return output_size;
 
     // CS149 TODO:
     //
@@ -216,8 +242,6 @@ int find_repeats(int* device_input, int length, int* device_output) {
     // exclusive_scan function with them. However, your implementation
     // must ensure that the results of find_repeats are correct given
     // the actual array length.
-
-    return 0; 
 }
 
 
