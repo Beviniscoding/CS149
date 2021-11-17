@@ -28,8 +28,35 @@ void pageRank(Graph g, double* solution, double damping, double convergence)
   for (int i = 0; i < numNodes; ++i) {
     solution[i] = equal_prob;
   }
-  
-  
+  bool converged = false;
+  while (!converged) {
+    int global_diff = 0;
+    for (int node = 0; node < numNodes; node++){
+       int new_score = 0;
+       int start_edge = g->outgoing_starts[node];
+       int end_edge = (node == g->num_nodes - 1)
+                 ? g->num_edges
+                 : g->outgoing_starts[node + 1];
+       //this is looping through the outgoing edges of node vi
+       //sum over all vj  nodes reachable from incoming edges
+       //so number of nodes coming from direct incoming nodes of vi?
+       int count_edges_leaving_vj = 0;
+       int total_score_old = 0;
+       for (int neighbor=start_edge; neighbor<end_edge; neighbor++) {
+         int neighbor_start = g -> outgoing_starts[neighbor];
+         int end_edge = (neighbor == g->num_nodes - 1)
+                  ? g->num_edges
+                  : g->outgoing_starts[neighbor + 1];
+         int addition = neighbor_end - neighbor_start;
+         count_edges_leaving_vj +=addition;
+         total_score_old_vj += solution[neighbor];
+       }
+       new_score = total_score_old_vj/count_edges_leaving_vj;
+
+       //do other additions
+    }
+
+}
   /*
      CS149 students: Implement the page rank algorithm here.  You
      are expected to parallelize the algorithm using openMP.  Your
