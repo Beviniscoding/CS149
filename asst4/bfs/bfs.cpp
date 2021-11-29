@@ -34,6 +34,8 @@ void top_down_step(
     #pragma omp parallel for schedule(dynamic, 1000)
 
     for (int i=0; i<frontier->count; i++) {
+        int threadIndex =  omp_get_thread_num();
+
         int node = frontier->vertices[i];
 
         int start_edge = g->outgoing_starts[node];
@@ -45,10 +47,11 @@ void top_down_step(
         for (int neighbor=start_edge; neighbor<end_edge; neighbor++) {
             int outgoing = g->outgoing_edges[neighbor];
 
-            if (distances[outgoing] == NOT_VISITED_MARKER) {
-                distances[outgoing] = distances[node] + 1;
-                int index = new_frontier_array[i]->count++;
-                new_frontier_array[i]->vertices[index] = outgoing;
+
+
+            if (__sync_val_compare_and_swap(&distances[outgoing], distances[outgoing], distances[node] + 1) == 1) {
+                int index = new_frontier_array[threadIndex]->count++;
+                new_frontier_array[i]->vertices[threadIndex] = outgoing;
             }
         }
     }
@@ -69,7 +72,15 @@ void bfs_top_down(Graph graph, solution* sol) {
     vertex_set* new_frontier = &list2;
 
     // TODO: How to init this with new frontiers?
-    vertex_set** new_frontier_array;
+    // omp get thread num for size of vertex set. numthreads ver
+    vertex_set** new_frontier_array = new vertex_set*[omp_get_max_threads()];
+    for (int i = 0; i < omp_get_max_threads(); i++) {
+        new_frontier_array[i] = new vertex_set();
+    })
+    new frontier_arrayp[i] = new vertex_set();
+    vertex_set_init(&list1, graph->num_nodes);
+
+    for (each element)
 
     // initialize all nodes to NOT_VISITED
     for (int i=0; i<graph->num_nodes; i++) {
@@ -88,13 +99,14 @@ void bfs_top_down(Graph graph, solution* sol) {
 
         vertex_set_clear(new_frontier);
 
-        top_down_step(graph, frontier, new_frontier, sol->distances);
+        top_down_step(graph, frontier, new_frontier_array, sol->distances);
 
 #ifdef VERBOSE
     double end_time = CycleTimer::currentSeconds();
     printf("frontier=%-10d %.4f sec\n", frontier->count, end_time - start_time);
 #endif
     // TODO: how to put all the new frontiers into one frontier
+    // for loop of membpy into the new frontier for the count into vertex list.
 
         // swap pointers
         vertex_set* tmp = frontier;
@@ -130,7 +142,7 @@ void bottom_up_step(
                         // Increment the new frontier counter atomically
                         
                         #pragma omp atomic capture
-                        new_frontier->count++;
+                        new_frontier->count+= 1;
 
 
                     }
@@ -175,7 +187,7 @@ void bfs_bottom_up(Graph graph, solution* sol)
     }
 
     // setup frontier flags with first as 1
-    frontier->vertices[ROOT_NODE_ID] = 0; // need to flush out frontier every time and reset
+    frontier->vertices[ROOT_NODE_ID] = 1; // need to flush out frontier every time and reset
     frontier->count++; // TODO: it's init together in top-down -- how to understand it?
     sol->distances[ROOT_NODE_ID] = 0;
 
