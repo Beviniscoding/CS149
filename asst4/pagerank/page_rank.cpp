@@ -7,6 +7,7 @@
 
 #include "../common/CycleTimer.h"
 #include "../common/graph.h"
+#include <iostream>
 
 
 // pageRank --
@@ -24,12 +25,48 @@ void pageRank(Graph g, double* solution, double damping, double convergence)
   // precision scores are used to avoid underflow for large graphs
 
   int numNodes = num_nodes(g);
-  double equal_prob = 1.0 / numNodes;
-  for (int i = 0; i < numNodes; ++i) {
+  double* new_score = new double[numNodes];
+  double equal_prob = 1.0 / num_nodes(g);
+  #pragma omp parallel for
+  for (int i = 0; i < numNodes; i++) {
     solution[i] = equal_prob;
   }
-  
-  
+  bool converged = false;
+  double global_diff = 0;
+  double no_out = 0.0;
+  //std::cout << "convergence: " << convergence << " numNodes: " << numNodes << std::endl;
+  while (!converged) {
+    global_diff = 0.0;
+    no_out = 0.0;
+    #pragma omp parallel for reduction (+:no_out)
+    for (int i = 0 ; i < numNodes; i++){
+        if (outgoing_size(g,i) == 0 ) {
+            no_out += (damping * solution[i] ) / numNodes;
+          }
+    }
+    #pragma omp parallel for reduction (+:global_diff)
+    for (int node = 0; node < g->num_nodes; node++){
+       new_score[node] = 0.0;
+       int start_edge = g->incoming_starts[node];
+       int end_edge = (node == g->num_nodes - 1)
+                 ? g->num_edges
+                : g->incoming_starts[node + 1];
+       for (int neighbor = start_edge; neighbor < end_edge; neighbor++) {
+         new_score[node] += (solution[g -> incoming_edges[neighbor]] / outgoing_size(g,g-> incoming_edges[neighbor]));
+       }
+       new_score[node] = (damping * new_score[node]) + ((1.0-damping) / num_nodes(g));
+       new_score[node] += no_out;
+       global_diff += fabs(new_score[node] - solution[node]);
+     //  solution[node] = new_score[node];//might be issue if some instances get here before referencing before
+    }
+    #pragma omp parallel for
+    for (int i = 0; i < numNodes; i++){
+      solution[i] = new_score[i];
+    }
+    converged = (global_diff < convergence);
+  }
+
+
   /*
      CS149 students: Implement the page rank algorithm here.  You
      are expected to parallelize the algorithm using openMP.  Your
