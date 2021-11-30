@@ -74,13 +74,14 @@ void bfs_top_down(Graph graph, solution* sol) {
     // TODO: How to init this with new frontiers?
     // omp get thread num for size of vertex set. numthreads ver
     vertex_set** new_frontier_array = new vertex_set*[omp_get_max_threads()];
+    //maybe have to max threads* max nodes so that we dont have to do 32 mallocs
     for (int i = 0; i < omp_get_max_threads(); i++) {
         new_frontier_array[i] = new vertex_set();
-    })
-    new frontier_arrayp[i] = new vertex_set();
-    vertex_set_init(&list1, graph->num_nodes);
+    }
+    //new_frontier_arrayp[i] = new vertex_set();
+    //vertex_set_init(&list1, graph->num_nodes);
 
-    for (each element)
+    //for (each element)
 
     // initialize all nodes to NOT_VISITED
     for (int i=0; i<graph->num_nodes; i++) {
@@ -141,8 +142,9 @@ void bottom_up_step(
                         distances[i] = distances[*v] + 1;
                         // Increment the new frontier counter atomically
                         
-                        #pragma omp atomic capture
-                        new_frontier->count+= 1;
+                        #pragma omp atomic // capture
+                        new_frontier ->count = new_frontier -> count + 1;
+
 
 
                     }
@@ -240,7 +242,7 @@ void bfs_hybrid(Graph graph, solution* sol)
     // setup frontier with the root node
     frontier->vertices[frontier->count++] = ROOT_NODE_ID;
     sol->distances[ROOT_NODE_ID] = 0;
-    
+
     while (frontier->count != 0) {
         num_unvisited_nodes -= frontier->count;
         vertex_set_clear(new_frontier);
@@ -252,13 +254,13 @@ void bfs_hybrid(Graph graph, solution* sol)
         } else {
             // TODO: Set up top down reduction stuffs
 
-            top_down_step(graph, frontier, new_frontier, sol->distances);
+            top_down_step(graph, frontier, &new_frontier, sol->distances);
             // TODO: Put together new frontier from array of new frontiers
         }
 
-        
 
-        
+
+
 
 
 
