@@ -129,15 +129,15 @@ void bfs_top_down(Graph graph, solution* sol) {
 void bottom_up_step(
     Graph g,
     int* distances,
-    int* indic_frontier,
-    int* new_frontiers,
+    bool* indic_frontier,
+    bool* new_frontiers,
     int& count)
 {
 int numNodes = g -> num_nodes;
 
 //I am having issues with different amounts of threads also ask about the atomic stuff
 
-#pragma omp parallel for schedule(dynamic, 1000)
+#pragma omp parallel for schedule(dynamic, 1000) reduction(+:count)
     // KEV TODO: somehow do reduction stuffs on the new frontier???
     for (int node = 0; node < g -> num_nodes; node++){
     // if already in, then break TODO: how to break in parallel for loop? is it just break or continue?
@@ -151,12 +151,12 @@ int numNodes = g -> num_nodes;
             for (int neighbor = start_edge; neighbor < end_edge; neighbor++) {
                  // If in frontier
                  int incoming = g -> incoming_edges[neighbor];
-                 if (indic_frontier[g -> incoming_edges[neighbor]] == 1) {
+                 if (indic_frontier[incoming]) {
                     // This node is in new frontier
-                     new_frontiers[node] = 1;
-                     //#pragma omp atomic capture
+                     new_frontiers[node] = true;
+                     //#pragma omp atomic write
                      distances[node] = distances[incoming] + 1;
-                     #pragma omp atomic
+                     //#pragma omp atomic
                      count ++;
                      break;
                   }
@@ -171,22 +171,34 @@ void bfs_bottom_up(Graph graph, solution* sol)
     // sol->distances[i] = NOT_VISITED_MARKER is populated with distance
 
     // initialize all nodes to NOT_VISITED
+    //bfs_top_down(graph,sol);
+    //retrun;
     int numNodes = graph -> num_nodes;
     for (int i=0; i<graph->num_nodes; i++) {
         sol->distances[i] = NOT_VISITED_MARKER;
     }
-    int* indic_frontier = new int[numNodes];//might have to use new with other arrays which may be iffy 
-
+    bool* indic_frontier = new bool[numNodes];//might have to use new with other arrays which may be iffy 
+    memset(indic_frontier, 0, sizeof(bool) * numNodes);
     // setup frontier flags with first as 1
     indic_frontier[ROOT_NODE_ID] = 1;
     sol->distances[ROOT_NODE_ID] = 0;
     int converged = 1;
+    bool* new_frontiers = new bool[numNodes];
+    memset(new_frontiers, 0, sizeof(bool) * numNodes);
     while(converged != 0) {
         converged = 0;
-        int* new_frontiers = new int[numNodes];
+
+        memset(new_frontiers, 0, sizeof(bool) * numNodes);
+        //int* new_frontiers = new int[numNodes];
         bottom_up_step(graph, sol->distances, indic_frontier, new_frontiers,converged);
-        memcpy(indic_frontier,new_frontiers,numNodes*sizeof(int));
-        delete(new_frontiers);
+        //memcpy(indic_frontier,new_frontiers,numNodes*sizeof(int));
+        //delete(new_frontiers);
+        // swap pointers
+        bool* tmp = indic_frontier;
+        indic_frontier = new_frontiers;
+        new_frontiers = tmp;
+        //clear new_frontier
+
     }
 
 
@@ -207,7 +219,6 @@ void bfs_hybrid(Graph graph, solution* sol)
 {
     bfs_top_down(graph,sol);
     /*
-
     int num_unvisited_nodes = graph->num_nodes;
 
     vertex_set list1;
@@ -230,38 +241,24 @@ void bfs_hybrid(Graph graph, solution* sol)
     while (frontier->count != 0) {
         num_unvisited_nodes -= frontier->count;
         vertex_set_clear(new_frontier);
-
         if (frontier->count > num_unvisited_nodes) {
-            for (int i = 0; i < frontier->count; i++) {
+            //for (int i = 0; i < frontier->count; i++) {
+            //}
 
-            }
-
-
-            //bottom_up_step(graph, sol->distances,indic_front,new_front,count);
-
+            bottom_up_step(graph, sol->distances,frontier -> vertices,new_frontier -> vertices,frontier -> count);
             //num nodes visited vs num nodes in frontier
         } else {
             // TODO: Set up top down reduction stuffs
 
-            //top_down_step(graph, frontier, &new_frontier, sol->distances);
+            top_down_step(graph, frontier, &new_frontier, sol->distances);
             // TODO: Put together new frontier from array of new frontiers
         }
-
-
-
-
-
-
-
         // swap pointers
         vertex_set* tmp = frontier;
         frontier = new_frontier;
         new_frontier = tmp;
     }
-
-*/
-
-
+    */
     // CS149 students:
     //
     // You will need to implement the "hybrid" BFS here as
