@@ -135,6 +135,16 @@ int main(int argc, char** argv) {
                     break;
                 }
             }
+                /*
+             for (int j=0; j<g->num_nodes; j++) {
+               printf("%d ",sol1.distances[j]);
+             }
+             printf ("mine\n");
+             for (int j=0; j<g->num_nodes; j++) {
+                 printf("%d ",sol4.distances[j]);
+             }
+             printf ("ref\n");
+            */
 
             //Run implementations
             start = CycleTimer::currentSeconds();
@@ -147,6 +157,17 @@ int main(int argc, char** argv) {
             ref_bottom_time = CycleTimer::currentSeconds() - start;
 
             std::cout << "Testing Correctness of Bottom Up\n";
+/*
+            for (int j=0; j<g->num_nodes; j++) {
+                printf("%d ",sol2.distances[j]);
+            }
+            printf ("mine\n");
+            for (int j=0; j<g->num_nodes; j++) {
+                  printf("%d ",sol4.distances[j]);
+            }
+            printf ("ref\n");
+*/
+
             for (int j=0; j<g->num_nodes; j++) {
                 if (sol2.distances[j] != sol4.distances[j]) {
                     fprintf(stderr, "*** Results disagree at %d: %d, %d\n", j, sol2.distances[j], sol4.distances[j]);
