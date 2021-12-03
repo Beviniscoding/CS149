@@ -82,7 +82,7 @@ void bfs_top_down(Graph graph, solution* sol) {
     //std::cout << "omp threads: " << omp_get_max_threads() << std::endl;
     vertex_set** new_frontier_array = new vertex_set*[omp_get_max_threads()];
 
-
+    #pragma omp parallel for
     for (int i = 0; i < omp_get_max_threads(); i++)  {
         new_frontier_array[i] = new vertex_set();
       //  std::cout << "thread index: " << i << std::endl;
@@ -232,7 +232,7 @@ void bfs_hybrid(Graph graph, solution* sol)
     bool* new_frontiers = new bool[numNodes];
     memset(new_frontiers, 0, sizeof(bool) * numNodes);
 
-    bool lastWasBottom = 0;
+    bool lastWasBottom = false;
 
 
     // set up for top down
@@ -250,7 +250,7 @@ void bfs_hybrid(Graph graph, solution* sol)
    // vertex_set** new_frontier_array = (vertex_set**)malloc(sizeof(vertex_set*) * omp_get_max_threads());
     //std::cout << "omp threads: " << omp_get_max_threads() << std::endl;
     vertex_set** new_frontier_array = new vertex_set*[omp_get_max_threads()];
-
+    #pragma omp parallel for
     for (int i = 0; i < omp_get_max_threads(); i++)  {
         new_frontier_array[i] = new vertex_set();
       //  std::cout << "thread index: " << i << std::endl;
@@ -270,7 +270,7 @@ void bfs_hybrid(Graph graph, solution* sol)
         num_unvisited_nodes -= frontier->count;
         vertex_set_clear(new_frontier);
         
-        if (frontier->count > num_unvisited_nodes) {
+        if (frontier->count / (num_unvisited_nodes+1) > 3.25) {
             //std::cout << "going into bottom up" << std::endl;
             if (!lastWasBottom) {
                 // last time was top down, must readjust stuffs
@@ -280,7 +280,7 @@ void bfs_hybrid(Graph graph, solution* sol)
                 }
             }
             // do bottom up step
-            lastWasBottom = 1;
+            lastWasBottom = true;
             frontier -> count = 0;
             memset(new_frontiers, 0, sizeof(bool) * numNodes);
             bottom_up_step(graph, sol->distances, indic_frontier, new_frontiers,frontier -> count);
@@ -302,7 +302,7 @@ void bfs_hybrid(Graph graph, solution* sol)
                 }
             }
            // std::cout << "finish set up top down step" << std::endl;
-            lastWasBottom = 0;
+            lastWasBottom = false;
         vertex_set_clear(new_frontier);
         top_down_step(graph, frontier, new_frontier_array, sol->distances);
 
